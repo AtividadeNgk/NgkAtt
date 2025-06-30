@@ -527,3 +527,11 @@ def get_orderbump_by_plan(bot_id, plan_index):
         if ob.get('plano_id') == plan_index:
             return ob
     return None
+
+def update_payment_plan(payment_id, plan):
+    """Atualiza o plano de um pagamento"""
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE PAYMENTS SET plano = ? WHERE id = ?", (json.dumps(plan), payment_id))
+    conn.commit()
+    conn.close()
