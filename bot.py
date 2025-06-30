@@ -145,20 +145,31 @@ async def processar_orderbump(update: Update, context: CallbackContext):
     
     if action == 'aceitar':
         # Usuário aceitou o order bump
-        # Soma o valor do order bump ao plano
         plano_index = context.user_data.get('plano_selecionado', 0)
         orderbump = manager.get_orderbump_by_plan(context.bot_data['id'], plano_index)
         
         if orderbump:
-            plan['value'] = plan['value'] + orderbump['value']
-            # Atualiza o pagamento com o novo valor
-            manager.update_payment_id(payment_id, payment_id)  # Mantém o mesmo ID
+            # Soma o valor do order bump ao plano
+            valor_original = plan['value']
+            valor_orderbump = orderbump['value']
+            novo_valor = valor_original + valor_orderbump
             
-            # Adiciona flag para identificar que tem order bump
+            # Atualiza o valor do plano
+            plan['value'] = novo_valor
+            
+            # Adiciona informações do order bump ao plano
             plan['has_orderbump'] = True
-            plan['orderbump_value'] = orderbump['value']
+            plan['orderbump_value'] = valor_orderbump
+            plan['valor_original'] = valor_original
+            
+            # Atualiza o pagamento no banco com o novo plano
+            manager.update_payment_plan(payment_id, plan)
+            
+            print(f"Order Bump aceito: Valor original R${valor_original} + Order Bump R${valor_orderbump} = Total R${novo_valor}")
     
-    # Continua com o fluxo normal de pagamento
+    # Agora chama pagar com o plano atualizado
+    # Simula um callback de pagamento normal
+    query.data = f'pagar_{payment_id}'
     await pagar(update, context)
 
 async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
