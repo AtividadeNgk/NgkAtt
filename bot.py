@@ -167,10 +167,58 @@ async def processar_orderbump(update: Update, context: CallbackContext):
             
             print(f"Order Bump aceito: Valor original R${valor_original} + Order Bump R${valor_orderbump} = Total R${novo_valor}")
     
-    # Agora chama pagar com o plano atualizado
-    # Simula um callback de pagamento normal
-    query.data = f'pagar_{payment_id}'
-    await pagar(update, context)
+    # Gera o PIX com o valor atualizado
+    recovery = plan.get('recovery', False)
+    if recovery:
+        asyncio.create_task(recovery_thread(context, query.from_user.id, recovery, payment_id))
+
+    keyboard = [
+        [InlineKeyboardButton('JÁ FIZ O PAGAMENTO', callback_data=f'pinto')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    try:
+        gate = manager.get_bot_gateway(context.bot_data['id'])
+        if not gate.get('type', False):
+            await query.message.edit_text('Nenhuma gateway cadastrada')
+            return ConversationHandler.END
+
+        if not gate.get('token', False):
+            await query.message.edit_text('Nenhuma gateway valida cadastrada')
+            return ConversationHandler.END
+
+        qr_data = {}
+
+        # Pega o plano atualizado do banco
+        payment_data_updated = manager.get_payment_by_id(payment_id)
+        plan_updated = json.loads(payment_data_updated[3])
+        
+        if gate.get('type') == 'pp':
+            qr_data = payment.criar_pix_pp(gate['token'], plan_updated['value'])
+            print(qr_data)
+        elif gate.get('type') == 'MP':
+            qr_data = payment.criar_pix_mp(gate['token'], plan_updated['value'])
+            
+        payment_qr = qr_data.get('pix_code', False)
+        trans_id = qr_data.get('payment_id', False)
+        
+        if not payment_qr or not trans_id:
+            await query.message.edit_text('Erro ao gerar QRCODE tente novamente')
+            return ConversationHandler.END
+
+        manager.update_payment_id(payment_id, trans_id)
+        manager.update_payment_status(payment_id, 'waiting')
+        
+        await context.bot.send_message(query.from_user.id, f'*Aguarde um momento enquanto preparamos tudo\ :\) *', parse_mode='MarkdownV2')
+        await context.bot.send_message(query.from_user.id, f'{escape_markdown_v2("Para efetuar o pagamento, utiliza a opção Pagar > PIX copia e Cola no aplicativo do seu banco.")}', parse_mode='MarkdownV2')
+        await context.bot.send_message(query.from_user.id, f'<b>Copie o código abaixo:</b>', parse_mode='HTML')
+        await context.bot.send_message(query.from_user.id, f'`{escape_markdown_v2(payment_qr)}`', parse_mode='MarkdownV2')
+        await context.bot.send_message(query.from_user.id, f'Por favor, confirme quando realizar o pagamento.', reply_markup=reply_markup)
+    
+    except Exception as e:
+        await query.message.edit_text(f'Ocorreu um erro ao executar tarefa de pagamentos\n{e}')
+
+    return ConversationHandler.END
 
 async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(context, update.message.from_user.id):
